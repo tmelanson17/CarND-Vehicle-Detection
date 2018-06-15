@@ -34,6 +34,8 @@ The goals / steps of this project are the following:
 
 You're reading it!
 
+The project implementation is done by running video_pipeline.ipynb. The main function for the pipeline is locaed in the ```pipeline``` function of `pipeline.py`.
+
 ### Histogram of Oriented Gradients (HOG)
 
 #### 1. Explain how (and identify where in your code) you extracted HOG features from the training images.
@@ -65,11 +67,13 @@ I trained a linear SVM using a GridSearch algorithm across several values of ker
 
 For the test images, it looked like 96x96 window was big enough for the bigger cars, but too small to measure the smaller cars with any level of granularity. Because of this, I decided to add a slightly smaller scale (1.0), which covers the more distant cars but isn't small enough to take over 1000 windows per image.
 
+Here is an example of all the boxes mapped onto the image.
+
 ![alt text][image3]
 
 #### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features, which provided a nice result.  Here are some example images:
+Ultimately I searched on two scales using YCrCb 3-channel HOG features, which provided a nice result.  Here are some example images (done using the third and fourth code blocks of `writeup.ipynb`:
 
 ![alt text][image4]
 ---
@@ -79,6 +83,7 @@ Ultimately I searched on two scales using YCrCb 3-channel HOG features, which pr
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
 Here's a [link to my video result](./results.mp4)
 
+The code for the video implementation can be found in `video_pipeline.ipynb`.
 
 #### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
 
