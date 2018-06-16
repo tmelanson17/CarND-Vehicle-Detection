@@ -265,4 +265,4 @@ def pipeline(img, params):
     
     # Find final boxes from heatmap using label function
     draw_img = draw_labeled_bboxes(np.copy(img), labels)
-    return draw_img, heat
+    return draw_img #, heat
