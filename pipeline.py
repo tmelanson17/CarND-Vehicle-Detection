@@ -6,10 +6,14 @@ import cv2
 from lesson_functions import *
 from scipy.ndimage.measurements import label
 from time import time
+from collections import deque
+
+
 
 # Define a single function that can extract features using hog sub-sampling and make predictions
 def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, cspace, hog_channel): # spatial_size, hist_bins):
     t_begin = time()
+    
     if np.max(img) > 200:
         img = img.astype(np.float32)/255
     
@@ -55,13 +59,12 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
     hog3 = get_hog_features(ch3, orient, pix_per_cell, cell_per_block, feature_vec=False, tsqrt=True)
     
     t_hog = time()
-    bboxes_out = list()
-    test_features=0
+    scores = list()
+    features=list()
     for xb in range(nxsteps):
         for yb in range(nysteps):
             ypos = yb*cells_per_step
             xpos = xb*cells_per_step
-            t1 = time()
             # Extract HOG for this patch
             hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
             hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
@@ -74,23 +77,34 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
                 hog_features = hog_feat2
             elif hog_channel == 2:
                 hog_features = hog_feat3
-                
-            xleft = xpos*pix_per_cell
-            ytop = ypos*pix_per_cell
+            if np.any(np.isnan(hog_features)):
+                continue
 
-            t2 = time()
-            # Scale features and make a prediction
-            test_features = X_scaler.transform(hog_features.reshape((1, -1)))    
-            test_prediction = svc.decision_function(test_features)
+            features.append(hog_features.ravel())
             
-            if test_prediction[0] > 0:
-                xbox_left = np.int(xleft*scale)
-                ytop_draw = np.int(ytop*scale)
-                win_draw = np.int(window*scale)
-                bboxes_out.append(((xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart)))
-            t3 = time()
-           
+    features = np.array(features)
+    # Scale features and make a prediction
+    test_features = X_scaler.transform(features)  
+    test_predictions = svc.decision_function(test_features)
     t_predictions = time()
+    bboxes_out = list()
+    for i in range(len(test_predictions)):
+        yb = np.mod(i, nysteps)
+        xb = i // nysteps
+        ypos = yb*cells_per_step
+        xpos = xb*cells_per_step
+        xleft = xpos*pix_per_cell
+        ytop = ypos*pix_per_cell
+        pred = test_predictions[i]
+        if pred > 0.0:
+            xbox_left = np.int(xleft*scale)
+            ytop_draw = np.int(ytop*scale)
+            win_draw = np.int(window*scale)
+            bboxes_out.append(((xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart)))
+        t4 = time()
+           
+    t_end = time()
+    
     return bboxes_out
 
 
@@ -172,21 +186,73 @@ def create_windows(img, ystart, ystop, scale, orient, pix_per_cell, cell_per_blo
             bboxes_out.append(((xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart)))
            
     t_predictions = time()
-    return bboxes_out
+    return bboxes_out, 
     
     
+    
+# Define a function to extract features from a list of images
+# Have this function call bin_spatial() and color_hist()
+def extract_features(imgs, cspace='RGB', orient=9, 
+                        pix_per_cell=8, cell_per_block=2, hog_channel=0):
+    # Create a list to append feature vectors to
+    features = []
+    # Iterate through the list of images
+    for file in imgs:
+        # Read in each one by one
+        image = mpimg.imread(file)
+        image = cv2.resize(image, (64, 64))
+#         print("Min: ", np.min(image), " max:", np.max(image))
+        # apply color conversion if other than 'RGB'
+        if cspace != 'RGB':
+            if cspace == 'HSV':
+                feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+            elif cspace == 'LUV':
+                feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2LUV)
+            elif cspace == 'HLS':
+                feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
+            elif cspace == 'YUV':
+                feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
+            elif cspace == 'YCrCb':
+                feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2YCrCb)
+        else: feature_image = np.copy(image)      
 
-def add_heat(heatmap, bbox_list):
+        # Call get_hog_features() with vis=False, feature_vec=True
+        if hog_channel == 'ALL':
+            hog_features = []
+            for channel in range(feature_image.shape[2]):
+                hog_features.append(get_hog_features(feature_image[:,:,channel], 
+                                    orient, pix_per_cell, cell_per_block, 
+                                    vis=False, feature_vec=True, tsqrt=True))
+            hog_features = np.ravel(hog_features)        
+        else:
+            hog_features = get_hog_features(feature_image[:,:,hog_channel], orient, 
+                        pix_per_cell, cell_per_block, vis=False, feature_vec=True, tsqrt=True)
+        # Get color features
+#         spatial_features = bin_spatial(image, size=(spatial, spatial))
+#         hist_features = color_hist(image, nbins=histbin)
+        
+        # Append the new feature vector to the features list
+        feature = np.hstack([hog_features])
+        features.append(feature)
+    # Return list of feature vectors
+    return features
+
+
+def add_heat(heatmap, bbox_list, inc_amounts=None):
     # Iterate through list of bboxes
-    for box in bbox_list:
+    if inc_amounts is None:
+        inc_amounts = np.ones(len(bbox_list))
+    for i in range(len(bbox_list)):
+        box = bbox_list[i]
+        inc_amount = inc_amounts[i]
         # Add += 1 for all pixels inside each bbox
         # Assuming each "box" takes the form ((x1, y1), (x2, y2))
-        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += inc_amount
 
     # Return updated heatmap
     return heatmap# Iterate through list of bboxes
     
-def apply_threshold(heatmap, threshold, labels):
+def apply_region_threshold(heatmap, threshold, labels):
     for car_number in range(1, labels[1]+1):
         # Find region labels for the image
         region = labels[0] == car_number
@@ -198,6 +264,13 @@ def apply_threshold(heatmap, threshold, labels):
             heatmap[nonzero] = 0
     # Return thresholded map
     return heatmap
+
+def apply_threshold(heatmap, threshold):
+    # Zero out pixels below the threshold
+    heatmap[heatmap <= threshold] = 0
+    # Return thresholded map
+    return heatmap
+
 
 def draw_labeled_bboxes(img, labels):
     # Iterate through all detected cars
@@ -216,14 +289,16 @@ def draw_labeled_bboxes(img, labels):
 
 
 # The main pipeline function
-previous = list()
-def pipeline(img, params):    
-
+history = deque(maxlen=10)
+def pipeline(img, params, add_heatmap=False):  
+    
+    
     # ystop changes with the value of scale
     ystart = 400
-    ystop = [528, 656]
-    scale = [0.75, 1.5]
+    ystop = [528, 656, 656, 656]
+    scale = [1.0, 1.5, 2.0, 2.5]
 
+    # img_tosearch = img[ystart:656,:]
     
     # get attributes of our svc object
     svc = params["svc"]
@@ -234,35 +309,49 @@ def pipeline(img, params):
     cspace = params["colorspace"]
     hog_channel = params["hog_channel"]
     
+    
     bboxes_out = list()
+    t1 = time()
     for j in range(len(scale)):
         bboxes = find_cars(img, ystart, ystop[j], scale[j], svc, X_scaler, orient, pix_per_cell, cell_per_block, cspace, hog_channel) #, spatial_size, hist_bins)
         bboxes_out += bboxes
-    
+    t2 = time()
     # Update array
-    if len(previous) < 6:
-        previous.append(bboxes_out)
-    else:
-        for i in range(5):
-            previous[i] = previous[i+1]
-        previous[5] = bboxes_out
+    history.append(bboxes_out)
     
     heat = np.zeros_like(img[:,:,0]).astype(np.float)
-    for bbox in previous:
+    for bbox_list in history:
         # Add heat to each box in box list
-        heat = add_heat(heat,bbox)
+        heat = add_heat(heat,bbox_list)
+    t3 = time()
+        
+    # for i in range(len(bboxes_out)):
+        # cv2.rectangle(draw_img, bbox[0], bbox[1], color=(0,0,255), thickness=6)
+
     
     # Create initial regions to filter out
     initial_labels = label(heat)
 
     # Apply threshold to help remove false positives
-    heat_thresholded = apply_threshold(heat, 24, initial_labels) 
+    heat_thresholded = apply_region_threshold(heat, 1, initial_labels) 
 
     # Visualize the heatmap when displaying    
     heatmap = np.clip(heat_thresholded, 0, 255) 
-    # heatmap[heatmap < 4] = 0
     labels = label(heatmap)
     
     # Find final boxes from heatmap using label function
-    draw_img = draw_labeled_bboxes(np.copy(img), labels)
-    return draw_img #, heat
+    draw_img = np.copy(img)
+    if np.max(draw_img) <= 1.0:
+        draw_img = draw_img * 255
+        draw_img = draw_img.astype(np.uint8)
+    draw_img = draw_labeled_bboxes(draw_img, labels)
+    
+    
+    # print("Time at pipeline stage 1", t2-t1)
+    # print("Time at pipeline stage 2", t3-t2)
+    # print("Time at pipeline stage 3", t4-t3)
+    # print("Time at pipeline stage 4", t5-t4)
+    if add_heatmap:
+        return draw_img, heat
+    else:
+        return draw_img
