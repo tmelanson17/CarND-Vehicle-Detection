@@ -6,7 +6,7 @@ from keras.models import Model
 from keras.preprocessing import image
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.misc import imread
+from skimage.io import imread
 import tensorflow as tf
 import os
 

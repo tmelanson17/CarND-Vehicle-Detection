@@ -34,7 +34,12 @@ The goals / steps of this project are the following:
 
 You're reading it!
 
-The project implementation is done by running video_pipeline.ipynb. The main function for the pipeline is locaed in the ```pipeline``` function of `pipeline.py`.
+
+The project implementation is done by running the second cell video_pipeline.ipynb.
+
+For the final result video, I used [this implementation]() of SSD (pre-trained) to obtain the result video. The main pipeline used was ```pipeline_ssd.py```.
+
+Other things I tried was using the sliding-window implementation discussed in the class. A non-deep pipeline is located in the ```pipeline``` function of `pipeline.py`. Because the rubric wanted me to discuss the shallow learning + sliding window implementation, I did so in this writeup.
 
 ### Histogram of Oriented Gradients (HOG)
 
@@ -108,6 +113,9 @@ Here's an example result showing the heatmap from a series of frames of video, t
 ### Discussion
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+
+
+For the SSD framework, I would implement time-based filtering to improve accuracy, albeit a different form involving neighboring detections.
 
 The first issue I faced was the lack of positive data. I improved upon this by improving the classifier until positive results were distinguishable. Second was the relatively high ranking of guard rails and shadows. I tried to solve this in two ways: first, by adding transform_sqrt to remove effects by shadows, and by hard negative mining. The transform_sqrt was effective agains shadows, but hard negative mining was not as helpful due to the relatively small number of samples I could create. 
 
